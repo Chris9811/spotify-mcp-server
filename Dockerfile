@@ -16,11 +16,10 @@ WORKDIR /app
 
 # Copiamo solo i file necessari dalla fase di build per tenere l'immagine leggera
 COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/build ./build
 RUN npm install --omit=dev
 
-# Esponiamo la porta che userà Cloud Run
 EXPOSE 8080
 
-# Comando per avviare il server
-CMD ["node", "dist/index.js"]
+# Avviamo il file index.js dalla cartella 'build'
+CMD ["node", "build/index.js"]
