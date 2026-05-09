@@ -364,7 +364,7 @@ export async function authorizeSpotify(): Promise<void> {
       }
     });
 
-    server.listen(Number.parseInt(port), '127.0.0.1', () => {
+    server.listen(Number.parseInt(port), '0.0.0.0', () => {
       console.log(
         `Listening for Spotify authentication callback on port ${port}`,
       );
