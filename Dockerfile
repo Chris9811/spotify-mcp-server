@@ -19,6 +19,10 @@ COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/build ./build
 RUN npm install --omit=dev
 
+ENV MCP_TRANSPORT=http
+ENV PORT=8080
+ENV MCP_PATH=/mcp
+
 EXPOSE 8080
 
 # Avviamo il file index.js dalla cartella 'build'

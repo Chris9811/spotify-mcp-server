@@ -30,6 +30,112 @@ A lightweight [Model Context Protocol (MCP)](https://modelcontextprotocol.io) se
 - _"Copy all the techno tracks from my workout playlist to my work playlist"_
 - _"Turn the volume down a bit"_
 
+## Transport Modes
+
+This server supports two MCP transports:
+
+- `stdio`: best for local desktop clients that spawn the process directly
+- `http`: best for remote deployment targets like Google Cloud Run
+
+By default, running `node build/index.js` uses `stdio`.
+
+To run it over HTTP instead:
+
+```bash
+MCP_TRANSPORT=http PORT=8080 MCP_PATH=/mcp node build/index.js
+```
+
+HTTP mode exposes:
+
+- MCP endpoint: `POST /mcp`
+- Health check: `GET /healthz`
+
+The Docker image defaults to HTTP mode on port `8080`, which matches Cloud Run well.
+
+## Deploying to Google Cloud Run
+
+For Google Cloud Run, use the server in `http` mode and provide the Spotify credentials as environment variables or secrets.
+
+### 1. Authenticate Spotify locally first
+
+The included `npm run auth` flow is designed for local use because it needs a browser and a localhost callback.
+
+Recommended local `.env` flow:
+
+```env
+SPOTIFY_CLIENT_ID=your-client-id
+SPOTIFY_CLIENT_SECRET=your-client-secret
+SPOTIFY_REDIRECT_URI=http://127.0.0.1:8888/callback
+```
+
+Then run:
+
+```bash
+npm run auth
+```
+
+After the login flow finishes, your `.env` will also contain:
+
+```env
+SPOTIFY_ACCESS_TOKEN=...
+SPOTIFY_REFRESH_TOKEN=...
+SPOTIFY_EXPIRES_AT=...
+```
+
+For Cloud Run, the most important long-lived value is `SPOTIFY_REFRESH_TOKEN`. The access token can expire and be refreshed automatically by the server.
+
+### 2. Configure your Spotify app
+
+In the Spotify Developer Dashboard, make sure the redirect URI used during `npm run auth` is registered exactly, for example:
+
+```text
+http://127.0.0.1:8888/callback
+```
+
+You do not need the Cloud Run URL as the Spotify redirect URI if you are doing the authorization bootstrap locally and then deploying the resulting tokens.
+
+### 3. Build and push the container
+
+Example using Artifact Registry:
+
+```bash
+gcloud builds submit --tag REGION-docker.pkg.dev/PROJECT_ID/REPOSITORY/spotify-mcp-server
+```
+
+### 4. Deploy to Cloud Run
+
+```bash
+gcloud run deploy spotify-mcp-server \
+  --image REGION-docker.pkg.dev/PROJECT_ID/REPOSITORY/spotify-mcp-server \
+  --platform managed \
+  --region REGION \
+  --allow-unauthenticated \
+  --set-env-vars MCP_TRANSPORT=http,MCP_PATH=/mcp,SPOTIFY_CLIENT_ID=YOUR_CLIENT_ID,SPOTIFY_CLIENT_SECRET=YOUR_CLIENT_SECRET,SPOTIFY_REDIRECT_URI=http://127.0.0.1:8888/callback,SPOTIFY_ACCESS_TOKEN=YOUR_ACCESS_TOKEN,SPOTIFY_REFRESH_TOKEN=YOUR_REFRESH_TOKEN,SPOTIFY_EXPIRES_AT=YOUR_EXPIRES_AT
+```
+
+If you use Secret Manager, pass secrets with `--set-secrets` instead of keeping Spotify values directly in the deploy command.
+
+### 5. MCP endpoint
+
+After deployment, the MCP endpoint will be:
+
+```text
+https://YOUR_CLOUD_RUN_URL/mcp
+```
+
+Health check:
+
+```text
+https://YOUR_CLOUD_RUN_URL/healthz
+```
+
+### Notes for production
+
+- Cloud Run can scale across multiple instances, so this server uses stateless Streamable HTTP mode in HTTP deployments.
+- The server does not rely on in-memory sessions in HTTP mode.
+- Refreshing the Spotify access token happens automatically at runtime.
+- Writing back to `.env` may fail in Cloud Run, which is expected and harmless as long as the runtime environment contains valid Spotify secrets.
+
 ## Tools
 
 ### Read Operations
