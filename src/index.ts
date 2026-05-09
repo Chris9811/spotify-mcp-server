@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
@@ -12,6 +13,7 @@ dotenv.config({
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { albumTools } from './albums.js';
 import { playTools } from './play.js';
 import { playlistTools } from './playlist.js';
@@ -73,6 +75,7 @@ async function startHttpServer() {
   const port = Number.parseInt(process.env.PORT || '8080', 10);
   const host = process.env.HOST || '0.0.0.0';
   const mcpPath = process.env.MCP_PATH || '/mcp';
+  const transports = new Map<string, StreamableHTTPServerTransport>();
 
   const httpServer = http.createServer(async (req, res) => {
     try {
@@ -103,18 +106,58 @@ async function startHttpServer() {
         return;
       }
 
-      const parsedBody = await readJsonBody(req);
-      const server = createServer();
-      const transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: undefined,
-      });
+      const sessionIdHeader = req.headers['mcp-session-id'];
+      const sessionId =
+        typeof sessionIdHeader === 'string' ? sessionIdHeader : undefined;
 
-      res.on('close', () => {
-        void transport.close();
-        void server.close();
-      });
+      const parsedBody =
+        req.method === 'POST' ? await readJsonBody(req) : undefined;
 
-      await server.connect(transport);
+      let transport: StreamableHTTPServerTransport | undefined;
+
+      if (sessionId) {
+        transport = transports.get(sessionId);
+
+        if (!transport) {
+          writeJson(res, 404, {
+            jsonrpc: '2.0',
+            error: {
+              code: -32001,
+              message: 'Session not found',
+            },
+            id: null,
+          });
+          return;
+        }
+      } else if (req.method === 'POST' && parsedBody && isInitializeRequest(parsedBody)) {
+        const server = createServer();
+        transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: () => randomUUID(),
+          onsessioninitialized: (newSessionId) => {
+            transports.set(newSessionId, transport!);
+          },
+        });
+
+        transport.onclose = () => {
+          if (transport?.sessionId) {
+            transports.delete(transport.sessionId);
+          }
+          void server.close();
+        };
+
+        await server.connect(transport);
+      } else {
+        writeJson(res, 400, {
+          jsonrpc: '2.0',
+          error: {
+            code: -32000,
+            message: 'Bad Request: No valid session ID provided',
+          },
+          id: null,
+        });
+        return;
+      }
+
       await transport.handleRequest(req, res, parsedBody);
     } catch (error) {
       console.error('Error handling HTTP MCP request:', error);
