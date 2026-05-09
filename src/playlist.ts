@@ -176,10 +176,27 @@ const removeTracksFromPlaylist: tool<{
       const tracks = trackIds.map((id) => ({ uri: `spotify:track:${id}` }));
 
       await handleSpotifyRequest(async (spotifyApi) => {
-        await spotifyApi.playlists.removeItemsFromPlaylist(playlistId, {
-          tracks,
-          ...(snapshotId ? { snapshot_id: snapshotId } : {}),
+        const tokenInfo = await spotifyApi.getAccessToken();
+        if (!tokenInfo || !tokenInfo.access_token) {
+          throw new Error("Impossibile recuperare l'access token dall'SDK.");
+        }
+
+        const body: Record<string, any> = { tracks };
+        if (snapshotId) body.snapshot_id = snapshotId;
+
+        const response = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/items`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${tokenInfo.access_token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(body)
         });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Errore API Spotify: ${response.status} - ${errorText}`);
+        }
       });
 
       return {
@@ -247,12 +264,31 @@ const reorderPlaylistItems: tool<{
 
     try {
       await handleSpotifyRequest(async (spotifyApi) => {
-        await spotifyApi.playlists.updatePlaylistItems(playlistId, {
+        const tokenInfo = await spotifyApi.getAccessToken();
+        if (!tokenInfo || !tokenInfo.access_token) {
+          throw new Error("Impossibile recuperare l'access token dall'SDK.");
+        }
+
+        const body: Record<string, any> = {
           range_start: rangeStart,
-          insert_before: insertBefore,
-          ...(rangeLength !== undefined ? { range_length: rangeLength } : {}),
-          ...(snapshotId ? { snapshot_id: snapshotId } : {}),
+          insert_before: insertBefore
+        };
+        if (rangeLength !== undefined) body.range_length = rangeLength;
+        if (snapshotId) body.snapshot_id = snapshotId;
+
+        const response = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/items`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${tokenInfo.access_token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(body)
         });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Errore API Spotify: ${response.status} - ${errorText}`);
+        }
       });
 
       const count = rangeLength ?? 1;

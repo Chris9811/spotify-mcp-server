@@ -278,13 +278,24 @@ const getPlaylistTracks: tool<{
     const { playlistId, limit = 50, offset = 0 } = args;
 
     const playlistTracks = await handleSpotifyRequest(async (spotifyApi) => {
-      return await spotifyApi.playlists.getPlaylistItems(
-        playlistId,
-        undefined,
-        undefined,
-        limit as MaxInt<50>,
-        offset,
-      );
+      const tokenInfo = await spotifyApi.getAccessToken();
+      if (!tokenInfo || !tokenInfo.access_token) {
+        throw new Error("Impossibile recuperare l'access token dall'SDK.");
+      }
+
+      const response = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/items?limit=${limit}&offset=${offset}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${tokenInfo.access_token}`
+        }
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Errore API Spotify: ${response.status} - ${errorText}`);
+      }
+
+      return await response.json();
     });
 
     if ((playlistTracks.items?.length ?? 0) === 0) {
@@ -299,7 +310,7 @@ const getPlaylistTracks: tool<{
     }
 
     const formattedTracks = playlistTracks.items
-      .map((item, i) => {
+      .map((item: any, i: number) => {
         const { track } = item;
         if (!track) return `${offset + i + 1}. [Removed track]`;
 

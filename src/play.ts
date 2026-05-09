@@ -183,20 +183,40 @@ const createPlaylist: tool<{
     const { name, description, public: isPublic = false } = args;
 
     const result = await handleSpotifyRequest(async (spotifyApi) => {
-      const me = await spotifyApi.currentUser.profile();
+      // 1. Estraiamo il token di accesso crudo e valido dalla libreria
+      const tokenInfo = await spotifyApi.getAccessToken();
+      if (!tokenInfo || !tokenInfo.access_token) {
+        throw new Error("Impossibile recuperare l'access token dall'SDK.");
+      }
 
-      return await spotifyApi.playlists.createPlaylist(me.id, {
-        name,
-        description,
-        public: isPublic,
+      // 2. Bypassiamo l'SDK e chiamiamo direttamente l'API aggiornata di Spotify per aggirare le restrizioni del Developer Mode
+      const response = await fetch('https://api.spotify.com/v1/me/playlists', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${tokenInfo.access_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: name,
+          description: description,
+          public: isPublic
+        })
       });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Errore API Spotify: ${response.status} - ${errorText}`);
+      }
+
+      // 3. Restituiamo il JSON della playlist appena creata
+      return await response.json();
     });
 
     return {
       content: [
         {
           type: 'text',
-          text: `Successfully created playlist "${name}"\nPlaylist ID: ${result.id}\nPlaylist URL: ${result.external_urls.spotify}`,
+          text: `Successo! Playlist "${name}" creata correttamente.\nID Playlist: ${result.id}\nURL: ${result.external_urls.spotify}`,
         },
       ],
     };
@@ -236,21 +256,38 @@ const addTracksToPlaylist: tool<{
     try {
       const trackUris = trackIds.map((id) => `spotify:track:${id}`);
 
-      await handleSpotifyRequest(async (spotifyApi) => {
-        await spotifyApi.playlists.addItemsToPlaylist(
-          playlistId,
-          trackUris,
-          position,
-        );
+      const result = await handleSpotifyRequest(async (spotifyApi) => {
+        const tokenInfo = await spotifyApi.getAccessToken();
+        if (!tokenInfo || !tokenInfo.access_token) {
+          throw new Error("Impossibile recuperare l'access token dall'SDK.");
+        }
+
+        const body: Record<string, any> = { uris: trackUris };
+        if (position !== undefined) body.position = position;
+
+        const response = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/items`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${tokenInfo.access_token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(body)
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Errore API Spotify: ${response.status} - ${errorText}`);
+        }
+        
+        return await response.json();
       });
 
       return {
         content: [
           {
             type: 'text',
-            text: `Successfully added ${trackIds.length} track${
-              trackIds.length === 1 ? '' : 's'
-            } to playlist (ID: ${playlistId})`,
+            text: `Successfully added ${trackIds.length} track${trackIds.length === 1 ? '' : 's'
+              } to playlist (ID: ${playlistId})`,
           },
         ],
       };
@@ -259,9 +296,8 @@ const addTracksToPlaylist: tool<{
         content: [
           {
             type: 'text',
-            text: `Error adding tracks to playlist: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
+            text: `Error adding tracks to playlist: ${error instanceof Error ? error.message : String(error)
+              }`,
           },
         ],
       };
@@ -401,9 +437,8 @@ const setVolume: tool<{
         content: [
           {
             type: 'text',
-            text: `Error setting volume: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
+            text: `Error setting volume: ${error instanceof Error ? error.message : String(error)
+              }`,
           },
         ],
       };
@@ -486,9 +521,8 @@ const adjustVolume: tool<{
         content: [
           {
             type: 'text',
-            text: `Error adjusting volume: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
+            text: `Error adjusting volume: ${error instanceof Error ? error.message : String(error)
+              }`,
           },
         ],
       };

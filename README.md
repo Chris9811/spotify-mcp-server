@@ -321,21 +321,12 @@ npm run build
 
 ### Spotify API Configuration
 
-Create a `spotify-config.json` file in the project root (you can copy and modify the provided example):
+Create a `.env` file in the project root:
 
-```bash
-# Copy the example config file
-cp spotify-config.example.json spotify-config.json
-```
-
-Then edit the file with your credentials:
-
-```json
-{
-  "clientId": "your-client-id",
-  "clientSecret": "your-client-secret",
-  "redirectUri": "http://127.0.0.1:8888/callback"
-}
+```env
+SPOTIFY_CLIENT_ID=your-client-id
+SPOTIFY_CLIENT_SECRET=your-client-secret
+SPOTIFY_REDIRECT_URI=http://127.0.0.1:8888/callback
 ```
 
 ### Authentication Process
@@ -356,17 +347,15 @@ npm run auth
 
 5. The authentication script will automatically exchange this code for access and refresh tokens.
 
-6. These tokens will be saved to your `spotify-config.json` file, which will now look something like:
+6. These tokens will be saved to your `.env` file, which will now look something like:
 
-```json
-{
-  "clientId": "your-client-id",
-  "clientSecret": "your-client-secret",
-  "redirectUri": "http://localhost:8888/callback",
-  "accessToken": "BQAi9Pn...kKQ",
-  "refreshToken": "AQDQcj...7w",
-  "expiresAt": 1677889354671
-}
+```env
+SPOTIFY_CLIENT_ID=your-client-id
+SPOTIFY_CLIENT_SECRET=your-client-secret
+SPOTIFY_REDIRECT_URI=http://127.0.0.1:8888/callback
+SPOTIFY_ACCESS_TOKEN=AccessTokenValue
+SPOTIFY_REFRESH_TOKEN=RefreshTokenValue
+SPOTIFY_EXPIRES_AT=UnixTimestampMs
 ```
 
 **Note**: The `expiresAt` field is a Unix timestamp (in milliseconds) indicating when the access token expires.
