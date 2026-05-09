@@ -7,6 +7,7 @@ import { SpotifyApi } from '@spotify/web-api-ts-sdk';
 import open from 'open';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ENV_FILE = path.join(__dirname, '../.env');
 const CONFIG_FILE = path.join(__dirname, '../spotify-config.json');
 
 export interface SpotifyConfig {
@@ -19,31 +20,75 @@ export interface SpotifyConfig {
 }
 
 export function loadSpotifyConfig(): SpotifyConfig {
-  if (!fs.existsSync(CONFIG_FILE)) {
+  const config: SpotifyConfig = {
+    clientId: process.env.SPOTIFY_CLIENT_ID || '',
+    clientSecret: process.env.SPOTIFY_CLIENT_SECRET || '',
+    redirectUri: process.env.SPOTIFY_REDIRECT_URI || '',
+    accessToken: process.env.SPOTIFY_ACCESS_TOKEN,
+    refreshToken: process.env.SPOTIFY_REFRESH_TOKEN,
+    expiresAt: process.env.SPOTIFY_EXPIRES_AT ? Number.parseInt(process.env.SPOTIFY_EXPIRES_AT) : undefined,
+  };
+
+  // Fallback to JSON if env vars are missing (backward compatibility during transition)
+  if (!config.clientId && fs.existsSync(CONFIG_FILE)) {
+    try {
+      const jsonConfig = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+      config.clientId = jsonConfig.clientId || config.clientId;
+      config.clientSecret = jsonConfig.clientSecret || config.clientSecret;
+      config.redirectUri = jsonConfig.redirectUri || config.redirectUri;
+      config.accessToken = jsonConfig.accessToken || config.accessToken;
+      config.refreshToken = jsonConfig.refreshToken || config.refreshToken;
+      config.expiresAt = jsonConfig.expiresAt || config.expiresAt;
+    } catch (error) {
+      console.warn('Failed to parse legacy spotify-config.json:', error);
+    }
+  }
+
+  if (!(config.clientId && config.clientSecret && config.redirectUri)) {
     throw new Error(
-      `Spotify configuration file not found at ${CONFIG_FILE}. Please create one with clientId, clientSecret, and redirectUri.`,
+      'Spotify configuration must include SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET, and SPOTIFY_REDIRECT_URI in environment variables or .env file.',
     );
   }
 
-  try {
-    const config = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-    if (!(config.clientId && config.clientSecret && config.redirectUri)) {
-      throw new Error(
-        'Spotify configuration must include clientId, clientSecret, and redirectUri.',
-      );
-    }
-    return config;
-  } catch (error) {
-    throw new Error(
-      `Failed to parse Spotify configuration: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    );
-  }
+  return config;
 }
 
 export function saveSpotifyConfig(config: SpotifyConfig): void {
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf8');
+  // Update process.env for current session
+  process.env.SPOTIFY_ACCESS_TOKEN = config.accessToken;
+  process.env.SPOTIFY_REFRESH_TOKEN = config.refreshToken;
+  process.env.SPOTIFY_EXPIRES_AT = config.expiresAt?.toString();
+
+  // Try to update .env file for persistence (local development)
+  try {
+    let envContent = '';
+    if (fs.existsSync(ENV_FILE)) {
+      envContent = fs.readFileSync(ENV_FILE, 'utf8');
+    }
+
+    const updates = {
+      SPOTIFY_CLIENT_ID: config.clientId,
+      SPOTIFY_CLIENT_SECRET: config.clientSecret,
+      SPOTIFY_REDIRECT_URI: config.redirectUri,
+      SPOTIFY_ACCESS_TOKEN: config.accessToken || '',
+      SPOTIFY_REFRESH_TOKEN: config.refreshToken || '',
+      SPOTIFY_EXPIRES_AT: config.expiresAt?.toString() || '',
+    };
+
+    let newContent = envContent;
+    for (const [key, value] of Object.entries(updates)) {
+      const regex = new RegExp(`^${key}=.*$`, 'm');
+      if (regex.test(newContent)) {
+        newContent = newContent.replace(regex, `${key}=${value}`);
+      } else {
+        newContent += `\n${key}=${value}`;
+      }
+    }
+
+    fs.writeFileSync(ENV_FILE, newContent.trim() + '\n', 'utf8');
+  } catch (error) {
+    console.warn('Could not save to .env file (this is expected in some cloud environments):', error);
+  }
 }
 
 let cachedSpotifyApi: SpotifyApi | null = null;
@@ -203,7 +248,7 @@ export async function authorizeSpotify(): Promise<void> {
       'Error: Redirect URI must use localhost for automatic token exchange',
     );
     console.error(
-      'Please update your spotify-config.json with a localhost redirect URI',
+      'Please update your .env file with a localhost redirect URI',
     );
     console.error('Example: http://127.0.0.1:8888/callback');
     process.exit(1);
